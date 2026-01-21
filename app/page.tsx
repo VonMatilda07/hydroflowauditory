@@ -3,296 +3,236 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend 
-} from 'recharts'
-import { Droplets, Wallet, TrendingDown, AlertTriangle, CheckCircle, Truck, CreditCard } from 'lucide-react'
+import { Activity, CreditCard, Droplets, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react'
 
-// Palet Warna Professional
-const COLORS_PAYMENT = ['#10b981', '#3b82f6', '#f59e0b', '#64748b'] // Hijau (Cash), Biru (Transfer), Kuning (Bon), Abu (Free)
-const COLORS_PRODUCT = '#3b82f6' // Biru buat batang produk
-
-export default function Dashboard() {
-  const [loading, setLoading] = useState(true)
-  
-  // State Data Dashboard
+export default function DashboardPage() {
   const [stats, setStats] = useState({
-    income: 0,        
-    shipping: 0,      
-    expense: 0,       
-    profit: 0,        
-    discrepancy: 0    
+    omzet: 0,
+    transaksi: 0,
+    produkTerjual: 0
   })
 
-  // State Buat Grafik
-  const [paymentStats, setPaymentStats] = useState<any[]>([]) // Grafik Tipe Pembayaran
-  const [productStats, setProductStats] = useState<any[]>([]) // Grafik Top Produk (Qty)
-  const [cashflowStats, setCashflowStats] = useState<any[]>([]) // Grafik Pemasukan vs Pengeluaran
+  // State Audit Air (BIO & RO)
+  const [audit, setAudit] = useState({
+    bio: { sold: 0, meter: 0, diff: 0, status: 'WAITING' },
+    ro: { sold: 0, meter: 0, diff: 0, status: 'WAITING' }
+  })
+  
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchDashboardData()
   }, [])
 
- const fetchDashboardData = async () => {
-    const today = new Date().toISOString().split('T')[0]
+  const fetchDashboardData = async () => {
+    setLoading(true)
+    const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
 
     try {
-      // 1. DATA TRANSAKSI (Buat Keuangan & Tipe Bayar)
-      // Ambil transaksi hari ini
+      // 1. AMBIL DATA PRODUK (Buat tau 1 item itu berapa liter & sumber airnya)
+      const { data: products } = await supabase.from('products').select('id, name, liters, source_type')
+      
+      // Bikin map biar gampang nyarinya: productMap[id] = {liters, source}
+      const productMap: Record<number, any> = {}
+      products?.forEach(p => {
+        productMap[p.id] = { liters: p.liters || 0, source: p.source_type }
+      })
+
+      // 2. HITUNG PENJUALAN HARI INI (TEORITIS)
       const { data: txs } = await supabase
         .from('transactions')
-        .select('*')
+        .select(`total_amount, transaction_items (product_id, quantity)`)
         .gte('created_at', `${today}T00:00:00`)
         .lte('created_at', `${today}T23:59:59`)
 
-      let totalIncome = 0
-      let totalShipping = 0
-      const paymentMap: Record<string, number> = {}
-      
-      // Simpan ID transaksi hari ini buat dipake query item nanti
-      const txIds: number[] = []
+      let totalOmzet = 0
+      let totalTx = 0
+      let bioSold = 0
+      let roSold = 0
 
       if (txs) {
+        totalTx = txs.length
         txs.forEach(t => {
-          totalIncome += (t.total_amount - (t.shipping_cost || 0)) 
-          totalShipping += (t.shipping_cost || 0)
-          txIds.push(t.id) // Kumpulkan ID
-
-          const type = t.payment_type || 'Lainnya'
-          paymentMap[type] = (paymentMap[type] || 0) + t.total_amount
+          totalOmzet += t.total_amount
+          // Loop item belanjaan
+          t.transaction_items.forEach((item: any) => {
+            const pInfo = productMap[item.product_id]
+            if (pInfo) {
+              const litersSold = item.quantity * pInfo.liters
+              if (pInfo.source === 'BIO') bioSold += litersSold
+              if (pInfo.source === 'RO') roSold += litersSold
+            }
+          })
         })
       }
 
-      // Format Data Grafik Tipe Pembayaran
-      const paymentChartData = Object.keys(paymentMap).map(key => ({
-        name: key,
-        value: paymentMap[key]
-      }))
-      setPaymentStats(paymentChartData)
-
-      // 2. DATA PRODUK (PERBAIKAN DISINI)
-      // Kita filter berdasarkan ID Transaksi, BUKAN created_at
-      let items: any[] = []
-      
-      if (txIds.length > 0) {
-        const { data } = await supabase
-          .from('transaction_items')
-          .select(`
-            quantity,
-            product_name,
-            products (water_usage_liter)
-          `)
-          .in('transaction_id', txIds) // <--- INI KUNCINYA (Filter by ID Transaksi Hari Ini)
-        
-        if (data) items = data
-      }
-      
-      let literTeoritis = 0
-      const productMap: Record<string, number> = {}
-
-      if (items) {
-        items.forEach((item: any) => {
-          const liter = item.products?.water_usage_liter || 0
-          literTeoritis += (item.quantity * liter)
-
-          const name = item.product_name
-          productMap[name] = (productMap[name] || 0) + item.quantity
-        })
-      }
-
-      // Format Data Grafik Produk
-      const productChartData = Object.keys(productMap)
-        .map(key => ({
-          name: key,
-          qty: productMap[key]
-        }))
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, 5)
-      
-      setProductStats(productChartData)
-
-      // 3. PENGELUARAN (Sama kayak sebelumnya)
-      const { data: exps } = await supabase
-        .from('expenses')
-        .select('amount')
-        .eq('date', today)
-      
-      const totalExpense = exps ? exps.reduce((sum, item) => sum + item.amount, 0) : 0
-
-      // 4. METERAN AIR (Sama kayak sebelumnya)
-      const { data: readings } = await supabase
+      // 3. HITUNG METERAN HARI INI (AKTUAL)
+      const { data: meters } = await supabase
         .from('meter_readings')
-        .select('meter_value')
-        .eq('date', today)
-        .order('created_at', { ascending: true })
+        .select('*')
+        .gte('created_at', `${today}T00:00:00`)
+        .lte('created_at', `${today}T23:59:59`)
+        .order('created_at', { ascending: true }) // Urut dari pagi ke malam
 
-      let literReal = 0
-      if (readings && readings.length >= 2) {
-        literReal = readings[readings.length - 1].meter_value - readings[0].meter_value
+      let bioMeter = 0
+      let roMeter = 0
+      let bioStatus = 'WAITING'
+      let roStatus = 'WAITING'
+
+      // Logika: Harus ada minimal 2 data (Awal & Akhir) atau ambil Max - Min
+      if (meters && meters.length >= 1) {
+        // Cari angka terkecil (Pagi) dan terbesar (Malam/Saat ini)
+        const readingsBio = meters.map(m => m.meter_bio).filter(n => n > 0)
+        const readingsRO = meters.map(m => m.meter_ro).filter(n => n > 0)
+
+        if (readingsBio.length > 0) {
+           const minBio = Math.min(...readingsBio)
+           const maxBio = Math.max(...readingsBio)
+           bioMeter = maxBio - minBio
+        }
+
+        if (readingsRO.length > 0) {
+           const minRO = Math.min(...readingsRO)
+           const maxRO = Math.max(...readingsRO)
+           roMeter = maxRO - minRO
+        }
+
+        // Tentukan Status (Margin Error 19 Liter)
+        const margin = 19 
+        const bioDiff = bioMeter - bioSold
+        const roDiff = roMeter - roSold
+
+        // Kalau meteran belum bergerak (masih 0), status waiting
+        // Kalau sudah ada selisih, cek status
+        bioStatus = Math.abs(bioDiff) <= margin ? 'SAFE' : (bioDiff > margin ? 'LEAK' : 'ANOMALY')
+        roStatus = Math.abs(roDiff) <= margin ? 'SAFE' : (roDiff > margin ? 'LEAK' : 'ANOMALY')
+        
+        // Simpan ke state audit
+        setAudit({
+          bio: { sold: bioSold, meter: bioMeter, diff: bioDiff, status: bioStatus },
+          ro: { sold: roSold, meter: roMeter, diff: roDiff, status: roStatus }
+        })
       }
 
-      setStats({
-        income: totalIncome,
-        shipping: totalShipping,
-        expense: totalExpense,
-        profit: (totalIncome + totalShipping) - totalExpense,
-        discrepancy: literReal - literTeoritis
-      })
-
-      setCashflowStats([
-        { name: 'Pemasukan', value: totalIncome + totalShipping, fill: '#10b981' },
-        { name: 'Pengeluaran', value: totalExpense, fill: '#ef4444' }
-      ])
+      setStats({ omzet: totalOmzet, transaksi: totalTx, produkTerjual: 0 })
 
     } catch (error) {
-      console.error('Error dashboard:', error)
+      console.error(error)
     } finally {
       setLoading(false)
     }
   }
 
-  const isBocor = stats.discrepancy > 5
+  // Komponen Helper untuk Status Badge
+  const StatusBadge = ({ status, diff }: { status: string, diff: number }) => {
+     if (status === 'WAITING') return <span className="text-gray-400 text-xs">Menunggu Data Meteran...</span>
+     if (status === 'SAFE') return <span className="flex items-center text-green-600 font-bold text-xs"><CheckCircle size={14} className="mr-1"/> AMAN (Wajar)</span>
+     if (status === 'LEAK') return <span className="flex items-center text-red-600 font-bold text-xs"><AlertTriangle size={14} className="mr-1"/> BOCOR (+{diff.toLocaleString()} L)</span>
+     return <span className="flex items-center text-orange-500 font-bold text-xs"><AlertTriangle size={14} className="mr-1"/> CEK INPUT ({diff.toLocaleString()} L)</span>
+  }
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="max-w-6xl mx-auto p-4 space-y-8 pb-20">
       
-      {/* HEADER RINGKASAN */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-800">Dashboard Utama</h2>
-          <p className="text-gray-500">Analisa performa depot hari ini.</p>
+      {/* HEADER */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-800">Dashboard Utama</h1>
+        <p className="text-gray-500">Ringkasan performa & audit hari ini.</p>
+      </div>
+
+      {/* STATISTIK KEUANGAN (ATAS) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="bg-blue-600 text-white shadow-lg">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium opacity-90 flex items-center gap-2">
+              <CreditCard size={18}/> Omzet Hari Ini
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">Rp {stats.omzet.toLocaleString()}</div>
+            <p className="text-sm opacity-80 mt-1">{stats.transaksi} Transaksi berhasil</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white border-blue-100 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
+              <Activity size={18}/> Status Operasional
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+             <div className="text-3xl font-bold text-gray-800">BUKA</div>
+             <p className="text-sm text-green-600 mt-1">System Online & Ready</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* AUDIT STOK AIR (THE MAIN FEATURE) */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+           <Droplets className="text-blue-500"/> Audit Stok Air (Real-time)
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* KARTU AUDIT BIO */}
+          <Card className={`border-t-4 ${audit.bio.status === 'LEAK' ? 'border-t-red-500' : 'border-t-blue-500'} shadow-md`}>
+            <CardHeader className="pb-2 border-b bg-gray-50/50">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-blue-700">Air BIO (Biasa)</CardTitle>
+                <StatusBadge status={audit.bio.status} diff={audit.bio.diff} />
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4 grid grid-cols-2 gap-4 text-center">
+               <div>
+                  <p className="text-xs text-gray-500 uppercase font-bold">Terjual (Kasir)</p>
+                  <p className="text-xl font-mono font-bold text-gray-800">{audit.bio.sold.toLocaleString()} <span className="text-xs font-normal">Liter</span></p>
+               </div>
+               <div className="border-l">
+                  <p className="text-xs text-gray-500 uppercase font-bold">Keluar (Meteran)</p>
+                  <p className="text-xl font-mono font-bold text-gray-800">{audit.bio.meter.toLocaleString()} <span className="text-xs font-normal">Liter</span></p>
+               </div>
+               <div className="col-span-2 pt-2 border-t mt-2">
+                 <p className="text-xs text-gray-400 mb-1">Selisih (Fisik - Sistem)</p>
+                 <p className={`text-lg font-bold ${audit.bio.diff > 19 ? 'text-red-600' : (audit.bio.diff < -19 ? 'text-orange-500' : 'text-green-600')}`}>
+                   {audit.bio.diff > 0 ? '+' : ''}{audit.bio.diff.toLocaleString()} Liter
+                 </p>
+               </div>
+            </CardContent>
+          </Card>
+
+          {/* KARTU AUDIT RO */}
+          <Card className={`border-t-4 ${audit.ro.status === 'LEAK' ? 'border-t-red-500' : 'border-t-purple-500'} shadow-md`}>
+            <CardHeader className="pb-2 border-b bg-gray-50/50">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-purple-700">Air RO (Premium)</CardTitle>
+                <StatusBadge status={audit.ro.status} diff={audit.ro.diff} />
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4 grid grid-cols-2 gap-4 text-center">
+               <div>
+                  <p className="text-xs text-gray-500 uppercase font-bold">Terjual (Kasir)</p>
+                  <p className="text-xl font-mono font-bold text-gray-800">{audit.ro.sold.toLocaleString()} <span className="text-xs font-normal">Liter</span></p>
+               </div>
+               <div className="border-l">
+                  <p className="text-xs text-gray-500 uppercase font-bold">Keluar (Meteran)</p>
+                  <p className="text-xl font-mono font-bold text-gray-800">{audit.ro.meter.toLocaleString()} <span className="text-xs font-normal">Liter</span></p>
+               </div>
+               <div className="col-span-2 pt-2 border-t mt-2">
+                 <p className="text-xs text-gray-400 mb-1">Selisih (Fisik - Sistem)</p>
+                 <p className={`text-lg font-bold ${audit.ro.diff > 19 ? 'text-red-600' : (audit.ro.diff < -19 ? 'text-orange-500' : 'text-green-600')}`}>
+                   {audit.ro.diff > 0 ? '+' : ''}{audit.ro.diff.toLocaleString()} Liter
+                 </p>
+               </div>
+            </CardContent>
+          </Card>
+
         </div>
         
-        {/* Indikator Laba Bersih */}
-        <div className="bg-white px-6 py-3 rounded-xl border shadow-sm text-right">
-          <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Laba Bersih Hari Ini</p>
-          <p className={`text-3xl font-bold ${stats.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            Rp {stats.profit.toLocaleString()}
-          </p>
-        </div>
+        <p className="text-center text-xs text-gray-400 mt-6 italic">
+          *Toleransi wajar (air bilas) adalah ±1 galon (19 Liter) per hari.
+        </p>
       </div>
-
-      {/* ROW 1: KARTU STATISTIK (4 Kotak) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="shadow-sm">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-gray-500">Omzet Penjualan</CardTitle>
-            <Wallet className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Rp {stats.income.toLocaleString()}</div>
-          </CardContent>
-        </Card>
-        
-        <Card className="shadow-sm">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-gray-500">Ongkir Driver</CardTitle>
-            <Truck className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Rp {stats.shipping.toLocaleString()}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-gray-500">Pengeluaran</CardTitle>
-            <TrendingDown className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Rp {stats.expense.toLocaleString()}</div>
-          </CardContent>
-        </Card>
-
-        <Card className={`shadow-sm border-l-4 ${isBocor ? 'border-l-red-500' : 'border-l-green-500'}`}>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-gray-500">Audit Air</CardTitle>
-            {isBocor ? <AlertTriangle className="h-4 w-4 text-red-600" /> : <CheckCircle className="h-4 w-4 text-green-600" />}
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold">Selisih: {stats.discrepancy} Liter</div>
-            <p className="text-xs text-gray-400">{isBocor ? '⚠️ Cek kebocoran!' : '✅ Data Klop'}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ROW 2: ANALITIK DETAIL (Ini yang kamu minta) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* 1. BREAKDOWN PRODUK TERLARIS (Horizontal Bar) */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>🏆 Top 5 Produk Terlaris (Qty)</CardTitle>
-            <CardDescription>Produk apa yang paling banyak keluar hari ini?</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={productStats} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
-                <Tooltip cursor={{fill: 'transparent'}} />
-                <Bar dataKey="qty" fill={COLORS_PRODUCT} radius={[0, 4, 4, 0]} barSize={30} label={{ position: 'right' }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* 2. SUMBER PENDAPATAN (Pie Chart) */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle>💳 Metode Pembayaran</CardTitle>
-            <CardDescription>Cek porsi Bon vs Tunai</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px] flex items-center justify-center">
-            {paymentStats.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={paymentStats}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {paymentStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS_PAYMENT[index % COLORS_PAYMENT.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: any) => `Rp ${value.toLocaleString()}`} />
-                  <Legend verticalAlign="bottom" height={36}/>
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-gray-400 text-sm">Belum ada transaksi</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ROW 3: ARUS KAS (Optional tapi bagus buat pembanding) */}
-      <Card>
-        <CardHeader>
-          <CardTitle>💸 Arus Kas (Pemasukan vs Pengeluaran)</CardTitle>
-        </CardHeader>
-        <CardContent className="h-[200px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={cashflowStats} layout="vertical" barSize={40}>
-              <XAxis type="number" hide />
-              <YAxis dataKey="name" type="category" width={100} />
-              <Tooltip formatter={(value: any) => `Rp ${value.toLocaleString()}`} cursor={{fill: 'transparent'}} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {cashflowStats.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
 
     </div>
   )

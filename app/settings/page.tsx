@@ -1,215 +1,396 @@
 "use client"
 
 import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js' // Kita butuh ini buat hack 'Add User'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Pencil, UserCircle } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
+import { Trash2, Plus, Edit, AlertTriangle, Droplets, Moon, Sun, UserPlus, Shield, User } from 'lucide-react'
 
-export default function SettingsPage() {
-  const [products, setProducts] = useState<any[]>([])
+// --- TIPE DATA ---
+type Product = {
+  id: number
+  name: string
+  price: number
+  category: string
+  source_type: 'BIO' | 'RO' | 'NONE'
+  liters: number
+}
+
+type UserProfile = {
+  id: string
+  full_name: string
+  email: string
+  role: 'superadmin' | 'admin' | 'karyawan'
+}
+
+export default function PengaturanPage() {
   const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState("produk")
   
-  // State untuk Edit Produk
-  const [editingProduct, setEditingProduct] = useState<any>(null)
-  const [isOpen, setIsOpen] = useState(false)
+  // State Dark Mode
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  // State Produk
+  const [products, setProducts] = useState<Product[]>([])
+  const [prodDialog, setProdDialog] = useState(false)
+  const [editingProdId, setEditingProdId] = useState<number | null>(null)
+  const [prodForm, setProdForm] = useState({ name: '', price: '', category: 'refill', source_type: 'BIO', liters: '19' })
+
+  // State User Management
+  const [users, setUsers] = useState<UserProfile[]>([])
+  const [userDialog, setUserDialog] = useState(false)
+  const [userForm, setUserForm] = useState({ email: '', password: '', fullName: '', role: 'karyawan' })
 
   useEffect(() => {
     fetchProducts()
+    fetchUsers()
+    
+    // Cek Dark Mode saat load
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      setIsDarkMode(true)
+      document.documentElement.classList.add('dark')
+    } else {
+      setIsDarkMode(false)
+      document.documentElement.classList.remove('dark')
+    }
   }, [])
 
-  const fetchProducts = async () => {
-    const { data } = await supabase.from('products').select('*').order('id')
-    if (data) setProducts(data)
+  // --- LOGIC DARK MODE ---
+  const toggleDarkMode = (checked: boolean) => {
+    setIsDarkMode(checked)
+    if (checked) {
+      document.documentElement.classList.add('dark')
+      localStorage.theme = 'dark'
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.theme = 'light'
+    }
   }
 
-  // --- FUNGSI UPDATE PRODUK ---
-  const handleUpdateProduct = async () => {
-    if (!editingProduct) return
+  // --- FETCH DATA ---
+  const fetchProducts = async () => {
+    const { data } = await supabase.from('products').select('*').order('id', { ascending: true })
+    if (data) setProducts(data as any[])
+  }
+
+  const fetchUsers = async () => {
+    // Ambil semua profil user
+    const { data } = await supabase.from('profiles').select('*').order('full_name', { ascending: true })
+    if (data) setUsers(data as any[])
+  }
+
+  // --- LOGIC PRODUK (Sama kayak sebelumnya) ---
+  const handleSaveProduct = async () => {
+    if (!prodForm.name || !prodForm.price) return alert("Nama & Harga wajib diisi!")
+    setLoading(true)
+    try {
+      const payload = {
+        name: prodForm.name,
+        price: parseInt(prodForm.price),
+        category: prodForm.category,
+        source_type: prodForm.source_type,
+        liters: parseFloat(prodForm.liters) || 0
+      }
+      if (editingProdId) {
+        await supabase.from('products').update(payload).eq('id', editingProdId)
+      } else {
+        await supabase.from('products').insert([payload])
+      }
+      await fetchProducts()
+      setProdDialog(false)
+      setProdForm({ name: '', price: '', category: 'refill', source_type: 'BIO', liters: '19' })
+      setEditingProdId(null)
+    } catch (e: any) { alert(e.message) }
+    setLoading(false)
+  }
+
+  const handleDeleteProduct = async (id: number) => {
+    if (confirm('Hapus produk ini?')) {
+      await supabase.from('products').delete().eq('id', id)
+      fetchProducts()
+    }
+  }
+
+  // --- LOGIC USER MANAGEMENT (SUPERADMIN FITUR) ---
+  
+  // 1. Tambah User Baru
+  const handleAddUser = async () => {
+    if (!userForm.email || !userForm.password || !userForm.fullName) return alert("Semua data wajib diisi!")
     setLoading(true)
 
     try {
-      const { error } = await supabase
-        .from('products')
-        .update({
-          name: editingProduct.name,
-          price: parseInt(editingProduct.price),
-          water_usage_liter: parseFloat(editingProduct.water_usage_liter)
-        })
-        .eq('id', editingProduct.id)
+      // TRIK: Bikin client sementara biar ga logout sesi Superadmin saat create user baru
+      const tempSupabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false } } // PENTING: Jangan simpan sesi
+      )
+
+      // 1. Buat Akun di Auth
+      const { data, error } = await tempSupabase.auth.signUp({
+        email: userForm.email,
+        password: userForm.password,
+        options: {
+          data: { full_name: userForm.fullName } // Metadata nama
+        }
+      })
 
       if (error) throw error
-      
-      alert('✅ Produk berhasil diupdate!')
-      setIsOpen(false)
-      fetchProducts()
+      if (!data.user) throw new Error("Gagal membuat user")
+
+      // 2. Update Role di tabel Profiles (karena defaultnya 'karyawan')
+      // Kita pake client utama (Superadmin) buat update ini karena punya hak akses
+      const { error: roleError } = await supabase
+        .from('profiles')
+        .update({ role: userForm.role }) // Set role sesuai pilihan
+        .eq('id', data.user.id)
+
+      if (roleError) throw roleError
+
+      alert(`✅ User ${userForm.fullName} berhasil dibuat sebagai ${userForm.role}!`)
+      setUserDialog(false)
+      setUserForm({ email: '', password: '', fullName: '', role: 'karyawan' })
+      fetchUsers() // Refresh tabel
+
     } catch (error: any) {
-      alert('Gagal update: ' + error.message)
+      console.error(error)
+      alert('Gagal: ' + error.message)
     } finally {
       setLoading(false)
     }
   }
 
-  // --- FUNGSI RESET DATA (DATA KIAMAT) ---
+  // 2. Edit Role User Lama
+  const handleUpdateRole = async (userId: string, newRole: string) => {
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
+    if (error) alert("Gagal update role")
+    else {
+      // Update state lokal biar cepet
+      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole as any } : u))
+    }
+  }
+
+  // --- LOGIC RESET ---
   const handleResetData = async () => {
-    // 1. Konfirmasi Pertama
-    const isConfirmed = confirm("⚠️ PERINGATAN KERAS ⚠️\n\nApakah Anda yakin ingin MENGHAPUS SEMUA DATA transaksi, laporan, dan audit?\n\nData yang hilang tidak bisa dikembalikan!")
-    if (!isConfirmed) return
-
-    // 2. Konfirmasi Kedua (Biar gak salah klik)
-    const secondConfirm = confirm("Yakin 100%? Klik OK untuk menghapus bersih database.")
-    if (!secondConfirm) return
-
-    setLoading(true)
-    try {
-      // Hapus data secara berurutan (Anak dulu baru Induk biar ga error Foreign Key)
-      
-      // 1. Hapus Item Transaksi
-      const { error: err1 } = await supabase.from('transaction_items').delete().neq('id', 0)
-      if (err1) throw err1
-
-      // 2. Hapus Transaksi Utama
-      const { error: err2 } = await supabase.from('transactions').delete().neq('id', 0)
-      if (err2) throw err2
-
-      // 3. Hapus Pengeluaran
-      const { error: err3 } = await supabase.from('expenses').delete().neq('id', 0)
-      if (err3) throw err3
-
-      // 4. Hapus Log Meteran
-      const { error: err4 } = await supabase.from('meter_readings').delete().neq('id', 0)
-      if (err4) throw err4
-
-      alert('♻️ SUKSES! Aplikasi kembali bersih seperti baru.')
-      window.location.reload() // Refresh halaman biar data kosong
-
-    } catch (error: any) {
-      console.error('Gagal reset:', error)
-      alert('Gagal reset data: ' + error.message)
-    } finally {
-      setLoading(false)
+    const confirmText = prompt("Ketik 'RESET' untuk menghapus SEMUA data transaksi & meteran:")
+    if (confirmText === 'RESET') {
+       setLoading(true)
+       await supabase.from('transaction_items').delete().neq('id', 0)
+       await supabase.from('transactions').delete().neq('id', 0)
+       await supabase.from('meter_readings').delete().neq('id', 0)
+       await supabase.from('expenses').delete().neq('id', 0)
+       alert('Data berhasil di-reset jadi 0!')
+       setLoading(false)
     }
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-10">
+    <div className="max-w-6xl mx-auto p-4 pb-20 transition-colors duration-300">
       
-      <div className="flex items-center gap-4">
-        <div className="p-3 bg-gray-100 rounded-full">
-          <UserCircle size={40} className="text-gray-600" />
-        </div>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Pengaturan Toko</h1>
-          <p className="text-gray-500">Kelola produk dan profil depot.</p>
+      {/* HEADER & DARK MODE TOGGLE */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Pengaturan Sistem</h1>
+        
+        <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 p-2 rounded-full px-4 border border-gray-200 dark:border-gray-700">
+          {isDarkMode ? <Moon size={18} className="text-blue-400" /> : <Sun size={18} className="text-orange-500" />}
+          <Label htmlFor="dark-mode" className="text-sm font-medium cursor-pointer dark:text-gray-200">
+             {isDarkMode ? 'Mode Gelap' : 'Mode Terang'}
+          </Label>
+          <Switch id="dark-mode" checked={isDarkMode} onCheckedChange={toggleDarkMode} />
         </div>
       </div>
 
-      {/* 1. MANAJEMEN PRODUK */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Daftar Produk & Harga</CardTitle>
-          <CardDescription>Klik tombol edit untuk mengubah harga atau nama produk.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama Produk</TableHead>
-                <TableHead>Kategori</TableHead>
-                <TableHead>Penggunaan Air (L)</TableHead>
-                <TableHead>Harga (Rp)</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell>{product.category}</TableCell>
-                  <TableCell>{product.water_usage_liter} Liter</TableCell>
-                  <TableCell>Rp {product.price.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">
-                    
-                    {/* TOMBOL EDIT POPUP */}
-                    <Dialog open={isOpen && editingProduct?.id === product.id} onOpenChange={(open) => {
-                      setIsOpen(open)
-                      if (open) setEditingProduct(product)
-                    }}>
-                      <DialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="hover:bg-blue-50 text-blue-600">
-                          <Pencil size={16} /> Edit
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Edit Produk: {product.name}</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <Label>Nama Produk</Label>
-                            <Input 
-                              value={editingProduct?.name || ''} 
-                              onChange={(e) => setEditingProduct({...editingProduct, name: e.target.value})}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Harga (Rp)</Label>
-                            <Input 
-                              type="number"
-                              value={editingProduct?.price || 0} 
-                              onChange={(e) => setEditingProduct({...editingProduct, price: e.target.value})}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Penggunaan Air per Item (Liter)</Label>
-                            <Input 
-                              type="number"
-                              value={editingProduct?.water_usage_liter || 0} 
-                              onChange={(e) => setEditingProduct({...editingProduct, water_usage_liter: e.target.value})}
-                            />
-                            <p className="text-xs text-gray-500">Isi 0 jika produk tidak menggunakan air (misal: Tisu)</p>
-                          </div>
-                          <Button className="w-full bg-blue-600" onClick={handleUpdateProduct} disabled={loading}>
-                            {loading ? 'Menyimpan...' : 'Simpan Perubahan'}
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-8 bg-gray-100 dark:bg-gray-800">
+          <TabsTrigger value="produk">📦 Produk & Harga</TabsTrigger>
+          <TabsTrigger value="users">👥 Manajemen User</TabsTrigger>
+          <TabsTrigger value="system">⚠️ System & Reset</TabsTrigger>
+        </TabsList>
 
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        {/* --- TAB 1: PRODUK --- */}
+        <TabsContent value="produk">
+          <Card className="dark:bg-gray-900 dark:border-gray-700">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="dark:text-white">Daftar Produk</CardTitle>
+                <CardDescription>Atur harga dan takaran air.</CardDescription>
+              </div>
+              <Dialog open={prodDialog} onOpenChange={setProdDialog}>
+                <DialogTrigger asChild>
+                  <Button onClick={() => { setEditingProdId(null); setProdForm({name:'', price:'', category:'refill', source_type:'BIO', liters:'19'}) }}>
+                    <Plus size={16} className="mr-2"/> Tambah
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>{editingProdId ? 'Edit' : 'Tambah'} Produk</DialogTitle></DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <Input placeholder="Nama Produk" value={prodForm.name} onChange={e => setProdForm({...prodForm, name: e.target.value})} />
+                    <div className="grid grid-cols-2 gap-4">
+                        <Input type="number" placeholder="Harga (Rp)" value={prodForm.price} onChange={e => setProdForm({...prodForm, price: e.target.value})} />
+                        <Input type="number" placeholder="Liter" value={prodForm.liters} onChange={e => setProdForm({...prodForm, liters: e.target.value})} />
+                    </div>
+                    <Select value={prodForm.source_type} onValueChange={(v) => setProdForm({...prodForm, source_type: v as any})}>
+                      <SelectTrigger><SelectValue placeholder="Sumber Air" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="BIO">BIO</SelectItem><SelectItem value="RO">RO</SelectItem><SelectItem value="NONE">Bukan Air</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DialogFooter><Button onClick={handleSaveProduct} disabled={loading}>Simpan</Button></DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produk</TableHead><TableHead>Harga</TableHead><TableHead>Liter</TableHead><TableHead>Sumber</TableHead><TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {products.map((p) => (
+                    <TableRow key={p.id} className="dark:hover:bg-gray-800">
+                      <TableCell className="font-medium dark:text-gray-200">{p.name}</TableCell>
+                      <TableCell className="dark:text-gray-300">Rp {p.price.toLocaleString()}</TableCell>
+                      <TableCell className="dark:text-gray-300">{p.liters} L</TableCell>
+                      <TableCell><Badge variant="outline">{p.source_type}</Badge></TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button size="icon" variant="ghost" onClick={() => { setEditingProdId(p.id); setProdForm({name: p.name, price: String(p.price), category: p.category, source_type: p.source_type, liters: String(p.liters)}); setProdDialog(true); }}><Edit size={14} /></Button>
+                        <Button size="icon" variant="ghost" className="text-red-500" onClick={() => handleDeleteProduct(p.id)}><Trash2 size={14} /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* 2. ZONA BAHAYA */}
-      <Card className="border-red-200">
-        <CardHeader>
-          <CardTitle className="text-red-600">Danger Zone</CardTitle>
-          <CardDescription>Hati-hati, aksi di sini tidak bisa dibatalkan.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between p-4 border border-red-100 bg-red-50 rounded-lg">
-            <div>
-              <h4 className="font-bold text-red-700">Reset Database Transaksi</h4>
-              <p className="text-sm text-red-600">Hapus semua riwayat penjualan, pengeluaran, dan audit.</p>
-            </div>
-            
-            {/* TOMBOL RESET AKTIF */}
-            <Button variant="destructive" onClick={handleResetData} disabled={loading}>
-              {loading ? 'Menghapus...' : 'Reset Data'}
-            </Button>
-            
-          </div>
-        </CardContent>
-      </Card>
+        {/* --- TAB 2: MANAJEMEN USER (BARU!) --- */}
+        <TabsContent value="users">
+          <Card className="dark:bg-gray-900 dark:border-gray-700">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="dark:text-white flex items-center gap-2"><Shield size={20} className="text-purple-600"/> Manajemen Akses</CardTitle>
+                <CardDescription>Tambah karyawan atau ubah jabatan.</CardDescription>
+              </div>
+              
+              {/* MODAL TAMBAH USER */}
+              <Dialog open={userDialog} onOpenChange={setUserDialog}>
+                <DialogTrigger asChild>
+                  <Button className="bg-purple-600 hover:bg-purple-700">
+                    <UserPlus size={16} className="mr-2"/> User Baru
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Buat Akun Karyawan/Admin</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Nama Lengkap</Label>
+                      <Input placeholder="Contoh: Budi Santoso" value={userForm.fullName} onChange={e => setUserForm({...userForm, fullName: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email Login</Label>
+                      <Input type="email" placeholder="budi@hydroflow.com" value={userForm.email} onChange={e => setUserForm({...userForm, email: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Password</Label>
+                      <Input type="password" placeholder="Minimal 6 karakter" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-purple-600 font-bold">Jabatan / Role</Label>
+                      <Select value={userForm.role} onValueChange={(v) => setUserForm({...userForm, role: v})}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="karyawan">👮 Karyawan (Kasir & Meteran)</SelectItem>
+                          <SelectItem value="admin">🤵 Admin (Laporan & Stok)</SelectItem>
+                          <SelectItem value="superadmin">👑 Superadmin (God Mode)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={handleAddUser} disabled={loading} className="w-full bg-purple-600">
+                      {loading ? 'Membuat Akun...' : 'Buat User Baru'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama User</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Jabatan (Role)</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users.map((u) => (
+                    <TableRow key={u.id} className="dark:hover:bg-gray-800">
+                      <TableCell className="font-bold flex items-center gap-2 dark:text-gray-200">
+                         <div className="bg-gray-100 dark:bg-gray-700 p-2 rounded-full"><User size={14}/></div>
+                         {u.full_name || 'Tanpa Nama'}
+                      </TableCell>
+                      <TableCell className="text-gray-500 dark:text-gray-400 font-mono text-sm">{u.email}</TableCell>
+                      <TableCell>
+                        <Select defaultValue={u.role} onValueChange={(val) => handleUpdateRole(u.id, val)}>
+                          <SelectTrigger className={`h-8 w-[140px] border-none font-bold ${
+                            u.role === 'superadmin' ? 'text-red-600 bg-red-50' : 
+                            u.role === 'admin' ? 'text-blue-600 bg-blue-50' : 'text-gray-600 bg-gray-100'
+                          }`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="karyawan">Karyawan</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="superadmin">Superadmin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="text-right">
+                         <Badge variant="outline" className="text-xs text-gray-400">Auto-Saved</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* --- TAB 3: SYSTEM --- */}
+        <TabsContent value="system">
+          <Card className="border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-900">
+            <CardHeader>
+              <CardTitle className="text-red-700 dark:text-red-400 flex items-center gap-2"><AlertTriangle /> Danger Zone</CardTitle>
+            </CardHeader>
+            <CardContent>
+               <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-4 rounded border border-red-100 dark:border-red-900">
+                  <div>
+                    <h4 className="font-bold text-gray-800 dark:text-gray-200">Reset Semua Data</h4>
+                    <p className="text-sm text-gray-500">Hapus riwayat transaksi & meteran.</p>
+                  </div>
+                  <Button variant="destructive" onClick={handleResetData}>RESET DATA</Button>
+               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

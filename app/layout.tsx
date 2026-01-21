@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { LayoutDashboard, ShoppingCart, Activity, TrendingDown, FileText, Settings, Menu, Droplets } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import Sidebar from "@/components/Sidebar" // <--- 1. Panggil Sidebar Canggih Kita
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,8 +20,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   
-  // Komponen Menu Sidebar (Biar gak nulis ulang 2x)
-  const SidebarMenu = () => (
+  // --- MENU MOBILE (Sementara Manual) ---
+  // Note: Menu ini belum ada fitur 'Satpam' (RBAC), jadi semua role bisa liat tombolnya.
+  // Tapi aman, karena kalau diklik halamannya tetap terproteksi logic database nanti.
+  const MobileMenu = () => (
     <div className="space-y-4 py-4">
       <div className="px-3 py-2">
         <div className="flex items-center pl-3 mb-10 gap-2">
@@ -29,16 +32,17 @@ export default function RootLayout({
            </div>
            <div>
              <h2 className="text-xl font-bold tracking-tight text-white">HydroFlow</h2>
-             <p className="text-xs text-blue-200">Audit System</p>
+             <p className="text-xs text-slate-400">Mobile Access</p>
            </div>
         </div>
         <div className="space-y-1">
-          <Link href="/"><Button variant="ghost" className="w-full justify-start text-blue-100 hover:text-white hover:bg-blue-700"><LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard</Button></Link>
-          <Link href="/kasir"><Button variant="ghost" className="w-full justify-start text-blue-100 hover:text-white hover:bg-blue-700"><ShoppingCart className="mr-2 h-4 w-4" /> Kasir (POS)</Button></Link>
-          <Link href="/meteran"><Button variant="ghost" className="w-full justify-start text-blue-100 hover:text-white hover:bg-blue-700"><Activity className="mr-2 h-4 w-4" /> Audit Meteran</Button></Link>
-          <Link href="/pengeluaran"><Button variant="ghost" className="w-full justify-start text-blue-100 hover:text-white hover:bg-blue-700"><TrendingDown className="mr-2 h-4 w-4" /> Pengeluaran</Button></Link>
-          <Link href="/laporan"><Button variant="ghost" className="w-full justify-start text-blue-100 hover:text-white hover:bg-blue-700"><FileText className="mr-2 h-4 w-4" /> Laporan</Button></Link>
-          <Link href="/settings"><Button variant="ghost" className="w-full justify-start text-blue-100 hover:text-white hover:bg-blue-700"><Settings className="mr-2 h-4 w-4" /> Pengaturan</Button></Link>
+          <Link href="/"><Button variant="ghost" className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"><LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard</Button></Link>
+          <Link href="/kasir"><Button variant="ghost" className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"><ShoppingCart className="mr-2 h-4 w-4" /> Kasir (POS)</Button></Link>
+          <Link href="/meteran"><Button variant="ghost" className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"><Activity className="mr-2 h-4 w-4" /> Audit Meteran</Button></Link>
+          <Link href="/pengeluaran"><Button variant="ghost" className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"><TrendingDown className="mr-2 h-4 w-4" /> Pengeluaran</Button></Link>
+          <Link href="/laporan"><Button variant="ghost" className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"><FileText className="mr-2 h-4 w-4" /> Laporan</Button></Link>
+          {/* Update link ke /pengaturan biar ga 404 */}
+          <Link href="/pengaturan"><Button variant="ghost" className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"><Settings className="mr-2 h-4 w-4" /> Pengaturan</Button></Link>
         </div>
       </div>
     </div>
@@ -48,31 +52,34 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         
-        {/* TAMPILAN MOBILE (Header + Menu Hamburger) */}
-        <div className="md:hidden flex items-center p-4 bg-blue-900 text-white sticky top-0 z-50">
+        {/* 1. TAMPILAN MOBILE (Header + Menu Hamburger) */}
+        {/* Warna diubah ke slate-900 biar senada sama Sidebar Desktop */}
+        <div className="md:hidden flex items-center p-4 bg-slate-900 text-white sticky top-0 z-50 shadow-md">
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="text-white hover:bg-blue-800">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-slate-800">
                 <Menu />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="bg-blue-900 border-r-blue-800 p-0 w-[280px]">
-              <SidebarMenu />
+            <SheetContent side="left" className="bg-slate-900 border-r-slate-800 p-0 w-[280px]">
+              <MobileMenu />
             </SheetContent>
           </Sheet>
-          <span className="font-bold ml-4">HydroFlow Mobile</span>
+          <span className="font-bold ml-4 tracking-wide">HydroFlow</span>
         </div>
 
-        <div className="flex min-h-screen bg-gray-50">
-          {/* TAMPILAN DESKTOP (Sidebar Tetap) */}
-          <div className="hidden md:block w-64 bg-blue-900 min-h-screen fixed left-0 top-0 z-10">
-            <SidebarMenu />
-          </div>
+        <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+          
+          {/* 2. TAMPILAN DESKTOP (Sidebar Canggih) */}
+          {/* Komponen <Sidebar /> ini otomatis hidden di mobile (md:flex) */}
+          <Sidebar />
 
-          {/* KONTEN UTAMA */}
-          <div className="flex-1 md:ml-64 p-4 md:p-8 w-full overflow-x-hidden">
+          {/* 3. KONTEN UTAMA */}
+          {/* md:ml-64 memberi jarak kiri biar ga ketutup sidebar di desktop */}
+          <main className="flex-1 md:ml-64 p-4 md:p-8 w-full overflow-x-hidden transition-all duration-300">
             {children}
-          </div>
+          </main>
+          
         </div>
       </body>
     </html>
