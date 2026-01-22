@@ -6,6 +6,8 @@ import { LayoutDashboard, ShoppingCart, Activity, TrendingDown, FileText, Settin
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import Sidebar from "@/components/Sidebar" // <--- 1. Panggil Sidebar Canggih Kita
+import { ToastProvider } from '@/lib/toast-context'
+import { ToastContainer } from '@/components/toast-container'
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -51,36 +53,41 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        
-        {/* 1. TAMPILAN MOBILE (Header + Menu Hamburger) */}
-        {/* Warna diubah ke slate-900 biar senada sama Sidebar Desktop */}
-        <div className="md:hidden flex items-center p-4 bg-slate-900 text-white sticky top-0 z-50 shadow-md">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="text-white hover:bg-slate-800">
-                <Menu />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="bg-slate-900 border-r-slate-800 p-0 w-[280px]">
-              <MobileMenu />
-            </SheetContent>
-          </Sheet>
-          <span className="font-bold ml-4 tracking-wide">HydroFlow</span>
-        </div>
-
-        <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+        <ToastProvider>
           
-          {/* 2. TAMPILAN DESKTOP (Sidebar Canggih) */}
-          {/* Komponen <Sidebar /> ini otomatis hidden di mobile (md:flex) */}
-          <Sidebar />
+          {/* 1. TAMPILAN MOBILE (Header + Menu Hamburger) */}
+          {/* Warna diubah ke slate-900 biar senada sama Sidebar Desktop */}
+          <div className="md:hidden flex items-center p-4 bg-slate-900 text-white sticky top-0 z-50 shadow-md">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-white hover:bg-slate-800">
+                  <Menu />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="bg-slate-900 border-r-slate-800 p-0 w-[280px]">
+                <MobileMenu />
+              </SheetContent>
+            </Sheet>
+            <span className="font-bold ml-4 tracking-wide">HydroFlow</span>
+          </div>
 
-          {/* 3. KONTEN UTAMA */}
-          {/* md:ml-64 memberi jarak kiri biar ga ketutup sidebar di desktop */}
-          <main className="flex-1 md:ml-64 p-4 md:p-8 w-full overflow-x-hidden transition-all duration-300">
-            {children}
-          </main>
-          
-        </div>
+          <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+            
+            {/* 2. TAMPILAN DESKTOP (Sidebar Canggih) */}
+            {/* Komponen <Sidebar /> ini otomatis hidden di mobile (md:flex) */}
+            <Sidebar />
+
+            {/* 3. KONTEN UTAMA */}
+            {/* md:ml-64 memberi jarak kiri biar ga ketutup sidebar di desktop */}
+            <main className="flex-1 md:ml-64 p-4 md:p-8 w-full overflow-x-hidden transition-all duration-300">
+              {children}
+            </main>
+            
+          </div>
+
+          {/* Toast Container */}
+          <ToastContainer />
+        </ToastProvider>
       </body>
     </html>
   );

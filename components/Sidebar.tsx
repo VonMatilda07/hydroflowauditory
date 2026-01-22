@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { 
   Home, Calculator, ClipboardList, Settings, 
-  Droplets, TrendingDown, LogOut, User 
+  Droplets, TrendingDown, LogOut, Users, CreditCard 
 } from 'lucide-react'
 
 export default function Sidebar() {
@@ -18,25 +18,35 @@ export default function Sidebar() {
   const [email, setEmail] = useState<string>('')
   const [loading, setLoading] = useState(true)
 
-  // --- CEK SIAPA YANG LOGIN ---
+  // --- CEK SIAPA YANG LOGIN (REAL-TIME LISTENER) ---
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        setEmail(user.email || '')
-        // Ambil role dari tabel profiles
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-        
-        if (profile) setRole(profile.role)
+    // Subscribe ke auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          setEmail(session.user.email || '')
+          
+          // Ambil role dari tabel profiles
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .single()
+          
+          if (profile) setRole(profile.role)
+        } else {
+          // User tidak login
+          setRole(null)
+          setEmail('')
+        }
+        setLoading(false)
       }
-      setLoading(false)
+    )
+
+    // Cleanup: unsubscribe saat component unmount
+    return () => {
+      subscription?.unsubscribe()
     }
-    checkUser()
   }, [])
 
   // --- FUNGSI LOGOUT ---
@@ -60,16 +70,29 @@ export default function Sidebar() {
       icon: Calculator, 
       roles: ['superadmin', 'admin', 'karyawan'] // Semua boleh
     },
+    // 🔥 MENU BARU: PELANGGAN 🔥
+    { 
+      name: 'Pelanggan', 
+      href: '/pelanggan', 
+      icon: Users, 
+      roles: ['superadmin', 'admin', 'karyawan'] 
+    },
     { 
       name: 'Audit Meteran', 
       href: '/meteran', 
       icon: Droplets, 
-      roles: ['superadmin', 'admin', 'karyawan'] // Semua boleh
+      roles: ['superadmin', 'admin', 'karyawan'] 
     },
     { 
       name: 'Pengeluaran', 
       href: '/pengeluaran', 
       icon: TrendingDown, 
+      roles: ['superadmin', 'admin'] 
+    },
+    { 
+      name: 'Hutang Pelanggan', 
+      href: '/debttracker', 
+      icon: CreditCard, 
       roles: ['superadmin', 'admin'] 
     },
     { 
@@ -80,7 +103,7 @@ export default function Sidebar() {
     },
     { 
       name: 'Pengaturan', 
-      href: '/settings', // Sesuaikan folder kamu, tadi kayaknya /pengaturan ya? Cek folder app mu.
+      href: '/settings', 
       icon: Settings, 
       roles: ['superadmin'] // Cuma BOS BESAR yang boleh
     },

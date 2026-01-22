@@ -1,31 +1,47 @@
 "use client"
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card' // CardDescription dihapus
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card' 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Camera, Droplets, Activity } from 'lucide-react' // Upload & Save dihapus
+import { Camera, Droplets, Activity, CalendarDays, ShieldAlert } from 'lucide-react' 
 
 export default function MeteranPage() {
   const [loading, setLoading] = useState(false)
+  const [role, setRole] = useState<string | null>(null) // State buat nyimpen role user
   
   const fileBioRef = useRef<HTMLInputElement>(null)
   const fileRORef = useRef<HTMLInputElement>(null)
 
-  // State Data
+  // State Data Standard
   const [shift, setShift] = useState('Awal')
   const [meterBio, setMeterBio] = useState('')
   const [meterRO, setMeterRO] = useState('')
   
+  // GOD MODE STATE: Tanggal Custom (Rapel)
+  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]) // Default hari ini
+
   // State Foto
   const [fileBio, setFileBio] = useState<File | null>(null)
   const [previewBio, setPreviewBio] = useState<string | null>(null)
 
   const [fileRO, setFileRO] = useState<File | null>(null)
   const [previewRO, setPreviewRO] = useState<string | null>(null)
+
+  // 1. Cek Role saat halaman dimuat
+  useEffect(() => {
+    const checkRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+        setRole(data?.role || 'karyawan')
+      }
+    }
+    checkRole()
+  }, [])
 
   // Handle Pilih Foto
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'bio' | 'ro') => {
@@ -44,7 +60,6 @@ export default function MeteranPage() {
 
   // Upload ke Storage
   const uploadImage = async (file: File) => {
-    // Generate nama file unik (saran AI VS Code diterapkan)
     const fileExt = file.name.split('.').pop()
     const uniqueId = Math.random().toString(36).substring(2, 15) 
     const fileName = `${Date.now()}-${uniqueId}.${fileExt}`
@@ -62,6 +77,12 @@ export default function MeteranPage() {
     if (!fileBio) return alert('📸 Foto Meteran BIO belum ada!')
     if (!fileRO) return alert('📸 Foto Meteran RO belum ada!')
 
+    // Konfirmasi kalau lagi mode rapel
+    if (role === 'superadmin' && customDate !== new Date().toISOString().split('T')[0]) {
+      const confirmRapel = confirm(`⚠️ PERINGATAN GOD MODE ⚠️\n\nAnda akan menginput data untuk tanggal MASA LALU: ${customDate}.\n\nApakah Anda yakin?`)
+      if (!confirmRapel) return
+    }
+
     setLoading(true)
 
     try {
@@ -71,16 +92,27 @@ export default function MeteranPage() {
         uploadImage(fileRO)
       ])
 
-      // 2. Simpan ke Database (Perbaikan kolom 'shift')
+      // 2. Siapkan Payload Database
+      const payload: any = {
+        shift: shift,
+        meter_bio: parseFloat(meterBio), 
+        meter_ro: parseFloat(meterRO),   
+        image_url: urlBio,       
+        image_url_ro: urlRO      
+      }
+
+      // ⚡ GOD MODE INJECTION ⚡
+      // Kalau Superadmin & Tanggal bukan hari ini, paksa created_at mundur
+      if (role === 'superadmin') {
+         // Kita gabungkan tanggal pilihan dengan jam saat ini biar urutannya bener
+         const timeNow = new Date().toTimeString().split(' ')[0] // Ambil "14:30:00"
+         payload.created_at = `${customDate}T${timeNow}`
+      }
+
+      // 3. Simpan ke Database
       const { error: dbError } = await supabase
         .from('meter_readings')
-        .insert([{
-          shift: shift,            // SUDAH DIPERBAIKI (Sesuai kolom database)
-          meter_bio: parseFloat(meterBio), 
-          meter_ro: parseFloat(meterRO),   
-          image_url: urlBio,       
-          image_url_ro: urlRO      
-        }])
+        .insert([payload])
 
       if (dbError) throw dbError
 
@@ -93,6 +125,8 @@ export default function MeteranPage() {
       setPreviewBio(null)
       setFileRO(null)
       setPreviewRO(null)
+      // Reset tanggal ke hari ini
+      setCustomDate(new Date().toISOString().split('T')[0])
 
     } catch (error: any) {
       console.error('Error detail:', error)
@@ -115,8 +149,31 @@ export default function MeteranPage() {
 
       <Card className="shadow-lg border-t-4 border-t-blue-600">
         <CardHeader>
-          <CardTitle>Input Shift & Data</CardTitle>
-          <div className="pt-2">
+          <CardTitle className="flex justify-between items-center">
+             <span>Input Shift & Data</span>
+             {role === 'superadmin' && <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-200 font-bold flex items-center gap-1"><ShieldAlert size={12}/> GOD MODE ACTIVE</span>}
+          </CardTitle>
+
+          {/* ⚡ AREA KHUSUS GOD MODE (CUMA SUPERADMIN YANG LIHAT) ⚡ */}
+          {role === 'superadmin' && (
+            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg animate-in fade-in slide-in-from-top-2">
+               <div className="text-red-800 font-bold text-sm mb-2 flex items-center gap-2">
+                  <CalendarDays size={16}/> RAPEL TANGGAL (Time Travel)
+               </div>
+               <div className="flex flex-col gap-1">
+                  <Label className="text-xs text-red-600">Pilih Tanggal Laporan:</Label>
+                  <Input 
+                    type="date" 
+                    className="bg-white border-red-300 focus:ring-red-500"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                  />
+                  <p className="text-[10px] text-red-500 mt-1">*Hati-hati! Data akan diselipkan ke tanggal yang Anda pilih.</p>
+               </div>
+            </div>
+          )}
+
+          <div className="pt-4">
              <Label>Pilih Shift</Label>
              <Select value={shift} onValueChange={setShift}>
               <SelectTrigger className="w-full md:w-1/2 mt-1 font-bold">
@@ -200,11 +257,19 @@ export default function MeteranPage() {
           </div>
 
           <Button 
-            className="w-full h-14 text-lg bg-gray-900 hover:bg-black shadow-xl" 
+            className={`w-full h-14 text-lg shadow-xl transition-all ${
+              role === 'superadmin' && customDate !== new Date().toISOString().split('T')[0]
+                ? 'bg-red-600 hover:bg-red-700' // Merah kalau lagi mode rapel
+                : 'bg-gray-900 hover:bg-black'
+            }`} 
             onClick={handleSubmit}
             disabled={loading}
           >
-            {loading ? 'Mengirim Data...' : 'SIMPAN SEMUA LAPORAN'}
+            {loading ? 'Mengirim Data...' : 
+              role === 'superadmin' && customDate !== new Date().toISOString().split('T')[0]
+                ? `SIMPAN RAPEL TGL ${customDate.split('-')[2]}`
+                : 'SIMPAN SEMUA LAPORAN'
+            }
           </Button>
 
         </CardContent>

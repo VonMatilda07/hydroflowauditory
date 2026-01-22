@@ -45,6 +45,10 @@ export default function LaporanPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false) // Buka tutup modal detail
   const printRef = useRef<HTMLDivElement>(null) // Ref buat area cetak
 
+  // --- SEARCH & FILTER STATE ---
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'unpaid'>('all')
+
   useEffect(() => {
     fetchData()
   }, [startDate, endDate])
@@ -74,17 +78,11 @@ export default function LaporanPage() {
         .lte('created_at', `${endDate}T23:59:59`)
         .order('created_at', { ascending: true }) 
 
-      if (txs) {
-        setTransactions([...txs].reverse()) 
-        processCharts(txs)
-      }
-
       // 2. Fetch Pengeluaran
       const { data: exps } = await supabase
         .from('expenses')
         .select('*')
         .gte('date', startDate).lte('date', endDate).order('date', { ascending: false })
-      if (exps) setExpenses(exps)
 
       // 3. Fetch Meteran
       const { data: meters } = await supabase
@@ -92,14 +90,26 @@ export default function LaporanPage() {
         .select('*')
         .gte('created_at', `${startDate}T00:00:00`).lte('created_at', `${endDate}T23:59:59`)
         .order('created_at', { ascending: false })
+
+      // Update state dengan data yang sudah di-fetch
+      if (txs) {
+        setTransactions([...txs].reverse()) 
+        processCharts(txs, exps || [])
+      }
+      if (exps) setExpenses(exps)
       if (meters) setMeterLogs(meters)
 
     } catch (e) { console.error(e) } 
     finally { setLoading(false) }
   }
 
-  const processCharts = (data: any[]) => {
+  const processCharts = (data: any[], expensesData: any[]) => {
     let omzet = 0
+    let expense = 0
+    
+    // Hitung expenses
+    expense = expensesData.reduce((a, b) => a + b.amount, 0)
+    
     // Chart 1: Trend
     const trendMap: Record<string, number> = {}
     data.forEach(t => {
@@ -124,11 +134,11 @@ export default function LaporanPage() {
 
     setChartProduct(Object.keys(prodMap).map(k => ({ name: k, qty: prodMap[k] })).sort((a, b) => b.qty - a.qty))
     setChartPayment(Object.keys(payMap).map(k => ({ name: k, value: payMap[k] })))
-    setSummary(prev => ({ ...prev, totalOmzet: omzet, totalTx: data.length }))
+    setSummary({ totalOmzet: omzet, totalExpense: expense, netProfit: omzet - expense, totalTx: data.length })
   }
 
-  const totalExpense = expenses.reduce((a, b) => a + b.amount, 0)
-  const netProfit = summary.totalOmzet - totalExpense
+  const totalExpense = summary.totalExpense
+  const netProfit = summary.netProfit
 
   const downloadCSV = (data: any[], filename: string) => {
     if (!data.length) return alert('Data kosong')
@@ -195,6 +205,24 @@ export default function LaporanPage() {
       alert('Gagal update: ' + e.message)
     }
   }
+
+  // --- FILTER LOGIC ---
+  const filteredTransactions = transactions.filter((tx) => {
+    // Filter by status
+    if (filterStatus !== 'all' && tx.status !== filterStatus) return false
+    
+    // Filter by search query (cari di notes/customer name, produk, amount)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      const notes = (tx.notes || '').toLowerCase()
+      const items = (tx.transaction_items || []).map((i: any) => i.product_name.toLowerCase()).join(' ')
+      const amount = tx.total_amount.toString()
+      
+      return notes.includes(query) || items.includes(query) || amount.includes(query)
+    }
+    
+    return true
+  })
 
   return (
     <div className="space-y-8 pb-10">
@@ -299,7 +327,39 @@ export default function LaporanPage() {
                 <Download size={16} className="mr-2"/> CSV
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {/* SEARCH & FILTER AREA */}
+              <div className="space-y-3 pb-4 border-b">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Input 
+                    placeholder="🔍 Cari nama customer, produk..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                  <select 
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value as any)}
+                    className="h-9 px-3 border rounded-md text-sm bg-white"
+                  >
+                    <option value="all">📊 Semua Status</option>
+                    <option value="paid">✅ Lunas Saja</option>
+                    <option value="unpaid">⏳ Belum Lunas</option>
+                  </select>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => { setSearchQuery(''); setFilterStatus('all'); }}
+                    className="h-9"
+                  >
+                    🔄 Reset Filter
+                  </Button>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Total: {filteredTransactions.length} transaksi
+                </div>
+              </div>
+              
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -311,36 +371,44 @@ export default function LaporanPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {transactions.map((tx) => (
-                    <TableRow key={tx.id}>
-                      <TableCell className="text-xs font-mono text-gray-500">
-                        {new Date(tx.created_at).toLocaleDateString('id-ID')} <br/>
-                        {new Date(tx.created_at).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-xs text-gray-600 mb-1">
-                          {tx.transaction_items.map((i: any, idx: number) => (
-                            <span key={idx}>• {i.product_name} x{i.quantity} </span>
-                          ))}
-                        </div>
-                        <Badge variant="secondary" className="text-[10px]">{tx.payment_type}</Badge>
-                        {tx.notes && <span className="text-[10px] ml-2 text-gray-400">({tx.notes})</span>}
-                      </TableCell>
-                      <TableCell>
-                         {tx.status === 'paid' ? (
-                           <Badge className="bg-green-100 text-green-800 hover:bg-green-200">Lunas</Badge>
-                         ) : (
-                           <Badge variant="destructive">Belum Lunas</Badge>
-                         )}
-                      </TableCell>
-                      <TableCell className="text-right font-bold">Rp {tx.total_amount.toLocaleString()}</TableCell>
-                      <TableCell className="text-center">
-                        <Button size="sm" variant="ghost" onClick={() => handleOpenDetail(tx)}>
-                          <Printer size={16} className="text-blue-600" />
-                        </Button>
+                  {filteredTransactions.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                        Tidak ada transaksi yang sesuai filter
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    filteredTransactions.map((tx) => (
+                      <TableRow key={tx.id}>
+                        <TableCell className="text-xs font-mono text-gray-500">
+                          {new Date(tx.created_at).toLocaleDateString('id-ID')} <br/>
+                          {new Date(tx.created_at).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs text-gray-600 mb-1">
+                            {tx.transaction_items.map((i: any, idx: number) => (
+                              <span key={idx}>• {i.product_name} x{i.quantity} </span>
+                            ))}
+                          </div>
+                          <Badge variant="secondary" className="text-[10px]">{tx.payment_type}</Badge>
+                          {tx.notes && <span className="text-[10px] ml-2 text-gray-400">({tx.notes})</span>}
+                        </TableCell>
+                        <TableCell>
+                           {tx.status === 'paid' ? (
+                             <Badge className="bg-green-100 text-green-800 hover:bg-green-200">Lunas</Badge>
+                           ) : (
+                             <Badge variant="destructive">Belum Lunas</Badge>
+                           )}
+                        </TableCell>
+                        <TableCell className="text-right font-bold">Rp {tx.total_amount.toLocaleString()}</TableCell>
+                        <TableCell className="text-center">
+                          <Button size="sm" variant="ghost" onClick={() => handleOpenDetail(tx)}>
+                            <Printer size={16} className="text-blue-600" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
