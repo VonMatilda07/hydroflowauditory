@@ -7,8 +7,8 @@ export default function SettingsLayout({
 }: {
   children: React.ReactNode
 }) {
-  // Hanya superadmin yang boleh akses /settings
-  useProtectedRoute('superadmin')
+  // Superadmin dan admin bisa akses /settings
+  useProtectedRoute(['superadmin', 'admin'])
 
   return <>{children}</>
 }

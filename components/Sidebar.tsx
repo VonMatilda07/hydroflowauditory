@@ -131,7 +131,7 @@ export default function Sidebar() {
       name: 'Pengaturan', 
       href: '/settings', 
       icon: Settings, 
-      roles: ['superadmin'] // Cuma BOS BESAR yang boleh
+      roles: ['superadmin', 'admin'] // Superadmin dan admin bisa akses
     },
   ]
 
@@ -165,6 +165,17 @@ export default function Sidebar() {
               <div key={i} className="h-10 bg-slate-800/50 rounded-lg animate-pulse"></div>
             ))}
           </nav>
+          {/* Profile skeleton */}
+          <div className="pt-4 border-t border-slate-800 mt-auto space-y-2">
+            <div className="px-4 py-3 bg-slate-800/50 rounded-xl flex items-center gap-3 border border-slate-700/50">
+              <div className="w-8 h-8 rounded-full bg-slate-700 animate-pulse"></div>
+              <div className="flex-1 space-y-1">
+                <div className="h-3 bg-slate-700 rounded w-2/3 animate-pulse"></div>
+                <div className="h-2 bg-slate-700 rounded w-1/2 animate-pulse"></div>
+              </div>
+            </div>
+            <div className="h-9 bg-slate-800/50 rounded-lg animate-pulse"></div>
+          </div>
         </>
       )
     }
