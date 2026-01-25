@@ -26,7 +26,7 @@ export default function Sidebar() {
     // Subscribe ke auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.email)
+        console.log('[Sidebar Auth] Event:', event, 'Email:', session?.user?.email)
         
         if (session?.user) {
           setEmail(session.user.email || '')
@@ -34,23 +34,33 @@ export default function Sidebar() {
           // Ambil role dari tabel profiles
           const { data: profile, error } = await supabase
             .from('profiles')
-            .select('role')
+            .select('role, id, email')
             .eq('id', session.user.id)
             .single()
           
-          console.log('Profile fetch result:', { profile, error, userId: session.user.id })
+          console.log('[Sidebar Profile] Query result:', { 
+            profile, 
+            error, 
+            userId: session.user.id,
+            profileData: profile ? { id: profile.id, email: profile.email, role: profile.role } : null 
+          })
           
           if (profile?.role) {
-            console.log('✅ Role found:', profile.role)
+            console.log('✅ [Sidebar] Role found from DB:', profile.role)
             setRole(profile.role)
           } else {
-            console.warn('⚠️ No profile role found, defaulting to karyawan')
+            console.warn('⚠️ [Sidebar] No profile role found, defaulting to karyawan')
+            console.warn('[Sidebar] This means either:', [
+              '1. Profile record not created in DB',
+              '2. RLS policy blocking profile read',
+              '3. User ID mismatch between auth and profiles'
+            ])
             // Fallback ke role karyawan
             setRole('karyawan')
           }
         } else {
           // User tidak login
-          console.log('No session, user not logged in')
+          console.log('[Sidebar] No session, user not logged in')
           setRole(null)
           setEmail('')
         }
