@@ -34,27 +34,33 @@ export default function Sidebar() {
           // Ambil role dari tabel profiles
           const { data: profile, error } = await supabase
             .from('profiles')
-            .select('role, id, email')
+            .select('role, id, email, created_at')
             .eq('id', session.user.id)
             .single()
           
-          console.log('[Sidebar Profile] Query result:', { 
+          console.log('[Sidebar Profile] Full query result:', { 
             profile, 
-            error, 
+            error,
             userId: session.user.id,
-            profileData: profile ? { id: profile.id, email: profile.email, role: profile.role } : null 
+            userEmail: session.user.email,
+            errorMessage: error?.message,
+            errorCode: error?.code,
           })
           
           if (profile?.role) {
             console.log('✅ [Sidebar] Role found from DB:', profile.role)
             setRole(profile.role)
           } else {
-            console.warn('⚠️ [Sidebar] No profile role found, defaulting to karyawan')
-            console.warn('[Sidebar] This means either:', [
-              '1. Profile record not created in DB',
-              '2. RLS policy blocking profile read',
-              '3. User ID mismatch between auth and profiles'
-            ])
+            console.warn('⚠️ [Sidebar] Profile query failed or empty:', {
+              hasProfile: !!profile,
+              profileRole: profile?.role,
+              error: error?.message,
+              suggestions: [
+                '1. Check if profile record exists in DB for user ' + session.user.id,
+                '2. Check RLS policy on profiles table',
+                '3. Check if profile.role column has data'
+              ]
+            })
             // Fallback ke role karyawan
             setRole('karyawan')
           }
