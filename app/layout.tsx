@@ -54,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AuthProvider>
+        <AuthContextProvider>
           <ToastProvider>
             
             {/* 1. TAMPILAN MOBILE (Header + Menu Hamburger) */}
