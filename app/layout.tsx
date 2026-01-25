@@ -6,7 +6,7 @@ import { LayoutDashboard, ShoppingCart, Activity, TrendingDown, FileText, Settin
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import Sidebar from "@/components/Sidebar"
-import { AuthProvider } from "@/components/auth-provider"
+import { AuthContextProvider } from "@/lib/auth-context"
 import { ToastProvider } from '@/lib/toast-context'
 import { ToastContainer } from '@/components/toast-container'
 
@@ -92,7 +92,7 @@ export default function RootLayout({
             {/* Toast Container */}
             <ToastContainer />
           </ToastProvider>
-        </AuthProvider>
+        </AuthContextProvider>
       </body>
     </html>
   );

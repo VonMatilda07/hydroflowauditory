@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
 import { 
   Home, Calculator, ClipboardList, Settings, 
   Droplets, TrendingDown, LogOut, Users, CreditCard 
@@ -12,76 +13,19 @@ import {
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const { user, role, loading, isReady } = useAuth()
 
   // --- STATE DATA USER & ROLE ---
-  const [role, setRole] = useState<string | null>(null)
   const [email, setEmail] = useState<string>('')
-  const [loading, setLoading] = useState(true)
   const [isClient, setIsClient] = useState(false)
 
-  // --- CEK SIAPA YANG LOGIN (REAL-TIME LISTENER) ---
+  // Update email when user changes
   useEffect(() => {
-    setIsClient(true) // Mark sebagai client-side render
-    
-    // Subscribe ke auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[Sidebar Auth] Event:', event, 'Email:', session?.user?.email)
-        
-        if (session?.user) {
-          setEmail(session.user.email || '')
-          
-          // Ambil role dari tabel profiles
-          const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('role, id, email, created_at')
-            .eq('id', session.user.id)
-            .single()
-          
-          console.log('[Sidebar Profile] Full query result:', { 
-            profile, 
-            error,
-            userId: session.user.id,
-            userEmail: session.user.email,
-            errorMessage: error?.message,
-            errorCode: error?.code,
-          })
-          
-          if (profile?.role) {
-            console.log('✅ [Sidebar] Role found from DB:', profile.role)
-            setRole(profile.role)
-          } else {
-            console.error('❌ [Sidebar] CRITICAL: Profile query failed!', {
-              userId: session.user.id,
-              userEmail: session.user.email,
-              profileExists: !!profile,
-              errorCode: error?.code,
-              errorMessage: error?.message,
-              profileData: profile,
-            })
-            console.warn('⚠️ [Sidebar] FIX: Check Supabase at https://app.supabase.com/project/_/editor?schema=public')
-            console.warn('⚠️ [Sidebar] 1. Does row exist in profiles table with id=' + session.user.id + '?')
-            console.warn('⚠️ [Sidebar] 2. Does the row have a role value (not NULL)?')
-            console.warn('⚠️ [Sidebar] 3. Is RLS policy blocking SELECT on profiles?')
-            // Fallback ke role karyawan
-            setRole('karyawan')
-          }
-        } else {
-          // User tidak login
-          console.log('[Sidebar] No session, user not logged in')
-          setRole(null)
-          setEmail('')
-        }
-        
-        setLoading(false)
-      }
-    )
-
-    // Cleanup: unsubscribe saat component unmount
-    return () => {
-      subscription?.unsubscribe()
+    setIsClient(true)
+    if (user?.email) {
+      setEmail(user.email)
     }
-  }, [])
+  }, [user])
 
   // --- FUNGSI LOGOUT ---
   const handleLogout = async () => {
@@ -240,7 +184,7 @@ export default function Sidebar() {
                 {email.split('@')[0]}
               </p>
               <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-slate-300 uppercase font-bold border border-slate-700">
-                {role || 'Loading...'}
+                {role && role !== 'karyawan' ? role : role || 'karyawan'}
               </span>
             </div>
           </div>

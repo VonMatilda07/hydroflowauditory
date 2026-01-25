@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,8 +30,8 @@ type Customer = {
 }
 
 export default function KasirPage() {
+  const { role: authRole, isReady } = useAuth()
   const [loading, setLoading] = useState(false)
-  const [role, setRole] = useState<string | null>(null) // State Role User
   
   // Data State
   const [products, setProducts] = useState<Product[]>([])
@@ -46,41 +47,12 @@ export default function KasirPage() {
   // GOD MODE STATE: Tanggal Custom (Rapel Transaksi)
   const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]) // Default hari ini
 
+  // Fetch data when auth is ready
   useEffect(() => {
-    fetchData()
-    checkRole()
-  }, [])
-
-  // 1. Cek Role user
-  const checkRole = async () => {
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError || !user) {
-        console.error('[POS] checkRole - Auth error:', authError?.message)
-        return
-      }
-
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError) {
-        console.error('[POS] checkRole - Profile fetch error:', profileError.message, { code: profileError.code })
-        setRole('karyawan')
-      } else if (profile?.role) {
-        console.log('[POS] ✅ Role found:', profile.role)
-        setRole(profile.role)
-      } else {
-        console.warn('[POS] ⚠️ Profile role is null, defaulting to karyawan')
-        setRole('karyawan')
-      }
-    } catch (error) {
-      console.error('[POS] checkRole - Unexpected error:', error)
-      setRole('karyawan')
+    if (isReady) {
+      fetchData()
     }
-  }
+  }, [isReady])
 
   const fetchData = async () => {
     try {
