@@ -184,7 +184,7 @@ export default function Sidebar() {
                 {email.split('@')[0]}
               </p>
               <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-slate-300 uppercase font-bold border border-slate-700">
-                {role && role !== 'karyawan' ? role : role || 'karyawan'}
+                {role || 'loading...'}
               </span>
             </div>
           </div>

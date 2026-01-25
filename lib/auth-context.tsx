@@ -6,42 +6,49 @@ import type { User } from '@supabase/supabase-js'
 
 interface AuthContextType {
   user: User | null
+  userEmail: string | null
   role: string | null
   loading: boolean
   isReady: boolean
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  role: null,
-  loading: true,
-  isReady: false,
-})
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthContextProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [role, setRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [isReady, setIsReady] = useState(false)
 
+  // Initialize auth on app mount
   useEffect(() => {
-    // Initialize session on app load
-    const initializeAuth = async () => {
+    let mounted = true
+
+    const initAuth = async () => {
       try {
-        console.log('[AuthContext] Initializing auth...')
-        
+        console.log('[AuthContext] 🔄 Initializing authentication...')
+
         // Get current session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        
-        if (sessionError) {
-          console.error('[AuthContext] Session error:', sessionError.message)
+        const { data: { session }, error } = await supabase.auth.getSession()
+
+        if (error) {
+          console.error('[AuthContext] ❌ Session check error:', error.message)
+          if (mounted) {
+            setLoading(false)
+            setIsReady(true)
+          }
+          return
         }
 
         if (session?.user) {
-          console.log('[AuthContext] ✅ Session found:', session.user.email)
-          setUser(session.user)
-          
-          // Fetch profile role
+          console.log('[AuthContext] ✅ Session found for:', session.user.email)
+          if (mounted) {
+            setUser(session.user)
+            setUserEmail(session.user.email || null)
+          }
+
+          // Fetch user profile and role
           const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('role')
@@ -49,45 +56,53 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
             .single()
 
           if (profileError) {
-            console.error('[AuthContext] Profile fetch error:', profileError.message, { code: profileError.code })
-            setRole('karyawan')
+            console.error('[AuthContext] ❌ Profile fetch failed:', {
+              message: profileError.message,
+              code: profileError.code,
+              userId: session.user.id,
+            })
+            if (mounted) setRole('karyawan')
           } else if (profile?.role) {
-            console.log('[AuthContext] ✅ Profile role:', profile.role)
-            setRole(profile.role)
+            console.log('[AuthContext] ✅ Role loaded:', profile.role)
+            if (mounted) setRole(profile.role)
           } else {
-            console.warn('[AuthContext] Profile has no role, defaulting to karyawan')
-            setRole('karyawan')
+            console.warn('[AuthContext] ⚠️ Profile has no role, defaulting to karyawan')
+            if (mounted) setRole('karyawan')
           }
         } else {
-          console.log('[AuthContext] No session on app init')
-          setUser(null)
-          setRole(null)
+          console.log('[AuthContext] ℹ️ No session found - user not logged in')
+          if (mounted) {
+            setUser(null)
+            setUserEmail(null)
+            setRole(null)
+          }
         }
 
-        setIsReady(true)
-        setLoading(false)
-      } catch (err: any) {
-        if (err?.name === 'AbortError') {
-          console.log('[AuthContext] Token refresh in progress (AbortError - expected)')
-        } else {
-          console.error('[AuthContext] Init error:', err)
+        if (mounted) {
+          setLoading(false)
+          setIsReady(true)
         }
-        setIsReady(true)
-        setLoading(false)
+      } catch (err: any) {
+        console.error('[AuthContext] ❌ Unexpected error:', err)
+        if (mounted) {
+          setLoading(false)
+          setIsReady(true)
+        }
       }
     }
 
-    initializeAuth()
+    initAuth()
 
     // Subscribe to auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('[AuthContext] Auth event:', event)
+        console.log('[AuthContext] 🔄 Auth state changed:', event)
 
         if (session?.user) {
           setUser(session.user)
+          setUserEmail(session.user.email || null)
 
-          // Fetch role for new session
+          // Re-fetch role on auth change
           const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('role')
@@ -95,25 +110,28 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
             .single()
 
           if (profileError) {
-            console.error('[AuthContext] Profile fetch on auth change error:', profileError.message)
+            console.error('[AuthContext] ❌ Profile fetch on auth change:', profileError.message)
             setRole('karyawan')
           } else {
             setRole(profile?.role || 'karyawan')
           }
         } else {
+          console.log('[AuthContext] ℹ️ User signed out')
           setUser(null)
+          setUserEmail(null)
           setRole(null)
         }
       }
     )
 
     return () => {
+      mounted = false
       subscription?.unsubscribe()
     }
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, isReady }}>
+    <AuthContext.Provider value={{ user, userEmail, role, loading, isReady }}>
       {children}
     </AuthContext.Provider>
   )
@@ -121,7 +139,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within AuthContextProvider')
   }
   return context
