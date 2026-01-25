@@ -27,13 +27,21 @@ export default function Sidebar() {
           setEmail(session.user.email || '')
           
           // Ambil role dari tabel profiles
-          const { data: profile } = await supabase
+          const { data: profile, error } = await supabase
             .from('profiles')
             .select('role')
             .eq('id', session.user.id)
             .single()
           
-          if (profile) setRole(profile.role)
+          console.log('Profile fetch:', { profile, error, userId: session.user.id })
+          if (profile) {
+            console.log('Role found:', profile.role)
+            setRole(profile.role)
+          } else {
+            console.warn('No profile found for user:', session.user.id)
+            // Fallback: set role default ke 'karyawan' jika profile belum dibuat
+            setRole('karyawan')
+          }
         } else {
           // User tidak login
           setRole(null)
