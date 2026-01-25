@@ -12,7 +12,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
-          console.error('[AuthProvider] Session error:', error.message)
+          console.error('[AuthProvider] Session error:', error.message, { code: error.name })
           return
         }
 
@@ -32,8 +32,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return () => {
           subscription?.unsubscribe()
         }
-      } catch (err) {
-        console.error('[AuthProvider] Init error:', err)
+      } catch (err: any) {
+        // AbortError is okay - it means middleware interrupted the request to refresh token
+        if (err?.name === 'AbortError') {
+          console.log('[AuthProvider] Token refresh in progress (AbortError - this is expected)')
+        } else {
+          console.error('[AuthProvider] Init error:', err)
+        }
       }
     }
 

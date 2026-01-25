@@ -51,26 +51,69 @@ export default function KasirPage() {
     checkRole()
   }, [])
 
-  // 1. Cek Role User
+  // 1. Cek Role user
   const checkRole = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-      setRole(data?.role || 'karyawan')
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        console.error('[POS] checkRole - Auth error:', authError?.message)
+        return
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError) {
+        console.error('[POS] checkRole - Profile fetch error:', profileError.message, { code: profileError.code })
+        setRole('karyawan')
+      } else if (profile?.role) {
+        console.log('[POS] ✅ Role found:', profile.role)
+        setRole(profile.role)
+      } else {
+        console.warn('[POS] ⚠️ Profile role is null, defaulting to karyawan')
+        setRole('karyawan')
+      }
+    } catch (error) {
+      console.error('[POS] checkRole - Unexpected error:', error)
+      setRole('karyawan')
     }
   }
 
   const fetchData = async () => {
-    // Ambil Produk
-    const { data: prodData } = await supabase.from('products').select('*')
-    if (prodData) setProducts(prodData)
+    try {
+      // Verify user is authenticated first
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        console.error('[POS] Auth error - cannot fetch data:', authError?.message)
+        return
+      }
 
-    // Ambil Daftar Pelanggan
-    const { data: custData } = await supabase
-      .from('customers')
-      .select('id, name, phone, points')
-      .order('name', { ascending: true })
-    if (custData) setCustomers(custData)
+      // Ambil Produk
+      const { data: prodData, error: prodError } = await supabase.from('products').select('*')
+      if (prodError) {
+        console.error('[POS] Products fetch error:', prodError.message, { code: prodError.code })
+      } else {
+        console.log('[POS] ✅ Products loaded:', prodData?.length || 0, 'items')
+        setProducts(prodData || [])
+      }
+
+      // Ambil Daftar Pelanggan
+      const { data: custData, error: custError } = await supabase
+        .from('customers')
+        .select('id, name, phone, points')
+        .order('name', { ascending: true })
+      if (custError) {
+        console.error('[POS] Customers fetch error:', custError.message, { code: custError.code })
+      } else {
+        console.log('[POS] ✅ Customers loaded:', custData?.length || 0, 'items')
+        setCustomers(custData || [])
+      }
+    } catch (error) {
+      console.error('[POS] Unexpected error in fetchData:', error)
+    }
   }
 
   // --- LOGIC KERANJANG ---

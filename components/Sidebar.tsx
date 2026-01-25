@@ -51,16 +51,18 @@ export default function Sidebar() {
             console.log('✅ [Sidebar] Role found from DB:', profile.role)
             setRole(profile.role)
           } else {
-            console.warn('⚠️ [Sidebar] Profile query failed or empty:', {
-              hasProfile: !!profile,
-              profileRole: profile?.role,
-              error: error?.message,
-              suggestions: [
-                '1. Check if profile record exists in DB for user ' + session.user.id,
-                '2. Check RLS policy on profiles table',
-                '3. Check if profile.role column has data'
-              ]
+            console.error('❌ [Sidebar] CRITICAL: Profile query failed!', {
+              userId: session.user.id,
+              userEmail: session.user.email,
+              profileExists: !!profile,
+              errorCode: error?.code,
+              errorMessage: error?.message,
+              profileData: profile,
             })
+            console.warn('⚠️ [Sidebar] FIX: Check Supabase at https://app.supabase.com/project/_/editor?schema=public')
+            console.warn('⚠️ [Sidebar] 1. Does row exist in profiles table with id=' + session.user.id + '?')
+            console.warn('⚠️ [Sidebar] 2. Does the row have a role value (not NULL)?')
+            console.warn('⚠️ [Sidebar] 3. Is RLS policy blocking SELECT on profiles?')
             // Fallback ke role karyawan
             setRole('karyawan')
           }
