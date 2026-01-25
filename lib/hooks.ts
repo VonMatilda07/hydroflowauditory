@@ -18,24 +18,38 @@ export function useProtectedRoute(allowedRoles: string | string[]) {
   useEffect(() => {
     const checkAccess = async () => {
       try {
-        // 1. Cek apakah user sudah login
-        const { data: { user } } = await supabase.auth.getUser()
+        // 1. Cek apakah user sudah login dengan proper error handling
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
         
-        if (!user) {
-          // Tidak login, redirect ke login
+        if (authError) {
+          console.error('[useProtectedRoute] Auth error:', authError.message)
           router.push('/login')
           return
         }
 
+        if (!user) {
+          console.warn('[useProtectedRoute] No authenticated user found')
+          router.push('/login')
+          return
+        }
+
+        console.log('[useProtectedRoute] ✅ User authenticated:', user.id)
+
         // 2. Ambil role dari database
-        const { data: profile, error } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .single()
 
-        if (error || !profile) {
-          // Data profile tidak ditemukan, redirect ke login
+        if (profileError) {
+          console.error('[useProtectedRoute] Profile fetch error:', profileError.message)
+          router.push('/login')
+          return
+        }
+
+        if (!profile) {
+          console.warn('[useProtectedRoute] No profile found for user')
           router.push('/login')
           return
         }
@@ -46,14 +60,15 @@ export function useProtectedRoute(allowedRoles: string | string[]) {
           : [allowedRoles]
 
         if (!rolesArray.includes(profile.role)) {
-          // Role tidak sesuai, redirect ke home
+          console.warn('[useProtectedRoute] User role not allowed:', profile.role, 'Allowed:', rolesArray)
           router.push('/')
           return
         }
 
+        console.log('[useProtectedRoute] ✅ Access granted for role:', profile.role)
         // Akses diizinkan, biarkan halaman render
       } catch (error) {
-        console.error('Error checking access:', error)
+        console.error('[useProtectedRoute] Unexpected error:', error)
         router.push('/')
       }
     }

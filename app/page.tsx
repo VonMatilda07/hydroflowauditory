@@ -29,8 +29,31 @@ export default function DashboardPage() {
     const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
 
     try {
+      // 0. VERIFY USER IS AUTHENTICATED (Required for RLS)
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError) {
+        console.error('[Dashboard] Auth verification error:', authError.message)
+        setLoading(false)
+        return
+      }
+
+      if (!user) {
+        console.warn('[Dashboard] No authenticated user - queries will return empty data')
+        setLoading(false)
+        return
+      }
+
+      console.log('[Dashboard] ✅ User authenticated:', user.id)
+
       // 1. AMBIL DATA PRODUK (Buat tau 1 item itu berapa liter & sumber airnya)
-      const { data: products } = await supabase.from('products').select('id, name, liters, source_type')
+      const { data: products, error: productsError } = await supabase
+        .from('products')
+        .select('id, name, liters, source_type')
+      
+      if (productsError) {
+        console.error('[Dashboard] Products fetch error:', productsError.message)
+      }
       
       // Bikin map biar gampang nyarinya: productMap[id] = {liters, source}
       const productMap: Record<number, any> = {}
@@ -39,11 +62,15 @@ export default function DashboardPage() {
       })
 
       // 2. HITUNG PENJUALAN HARI INI (TEORITIS)
-      const { data: txs } = await supabase
+      const { data: txs, error: txsError } = await supabase
         .from('transactions')
         .select(`total_amount, transaction_items (product_id, quantity)`)
         .gte('created_at', `${today}T00:00:00`)
         .lte('created_at', `${today}T23:59:59`)
+
+      if (txsError) {
+        console.error('[Dashboard] Transactions fetch error:', txsError.message)
+      }
 
       let totalOmzet = 0
       let totalTx = 0
@@ -67,12 +94,16 @@ export default function DashboardPage() {
       }
 
       // 3. HITUNG METERAN HARI INI (AKTUAL)
-      const { data: meters } = await supabase
+      const { data: meters, error: metersError } = await supabase
         .from('meter_readings')
         .select('*')
         .gte('created_at', `${today}T00:00:00`)
         .lte('created_at', `${today}T23:59:59`)
         .order('created_at', { ascending: true }) // Urut dari pagi ke malam
+
+      if (metersError) {
+        console.error('[Dashboard] Meter readings fetch error:', metersError.message)
+      }
 
       let bioMeter = 0
       let roMeter = 0
