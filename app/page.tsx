@@ -19,10 +19,44 @@ export default function DashboardPage() {
   })
   
   const [loading, setLoading] = useState(true)
+  const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
-    fetchDashboardData()
+    // Wait untuk session ter-restore sebelum query
+    const checkSessionReady = async () => {
+      try {
+        // Subscribe ke auth state untuk ensure session ready
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event, session) => {
+            console.log('[Dashboard] Auth state changed:', event, session?.user?.email)
+            if (session?.user) {
+              setIsReady(true)
+            }
+          }
+        )
+
+        // Also check current session
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          setIsReady(true)
+        }
+
+        return () => {
+          subscription?.unsubscribe()
+        }
+      } catch (err) {
+        console.error('[Dashboard] Session check error:', err)
+      }
+    }
+
+    checkSessionReady()
   }, [])
+
+  useEffect(() => {
+    if (isReady) {
+      fetchDashboardData()
+    }
+  }, [isReady])
 
   const fetchDashboardData = async () => {
     setLoading(true)
