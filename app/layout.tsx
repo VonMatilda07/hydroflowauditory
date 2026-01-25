@@ -75,7 +75,9 @@ export default function RootLayout({
             
             {/* 2. TAMPILAN DESKTOP (Sidebar Canggih) */}
             {/* Komponen <Sidebar /> ini otomatis hidden di mobile (md:flex) */}
-            <Sidebar />
+            <div className="hidden md:block">
+              <Sidebar />
+            </div>
 
             {/* 3. KONTEN UTAMA */}
             {/* md:ml-64 memberi jarak kiri biar ga ketutup sidebar di desktop */}

@@ -114,11 +114,31 @@ export default function Sidebar() {
     role && item.roles.includes(role)
   )
 
-  if (loading) return null // Atau kasih spinner loading kecil
   if (pathname === '/login') return null
 
+  // Render sidebar skeleton saat loading (hindari hydration mismatch)
+  if (loading) {
+    return (
+      <aside suppressHydrationWarning className="w-64 bg-slate-900 text-white h-screen fixed left-0 top-0 p-4 flex flex-col md:flex z-50 shadow-2xl">
+        {/* Skeleton placeholder untuk mencegah layout shift */}
+        <div className="mb-8 flex items-center gap-2 px-2">
+          <div className="bg-blue-600/50 p-2 rounded-lg w-8 h-8 animate-pulse"></div>
+          <div className="flex-1">
+            <div className="h-4 bg-slate-800 rounded w-3/4 mb-1"></div>
+            <div className="h-3 bg-slate-800 rounded w-1/2"></div>
+          </div>
+        </div>
+        <nav className="flex-1 space-y-2">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-10 bg-slate-800/50 rounded-lg animate-pulse"></div>
+          ))}
+        </nav>
+      </aside>
+    )
+  }
+
   return (
-    <aside className="w-64 bg-slate-900 text-white h-screen fixed left-0 top-0 p-4 flex flex-col hidden md:flex z-50 shadow-2xl">
+    <aside suppressHydrationWarning className="w-64 bg-slate-900 text-white h-screen fixed left-0 top-0 p-4 flex flex-col md:flex z-50 shadow-2xl">
       
       {/* Header Logo */}
       <div className="mb-8 flex items-center gap-2 px-2">
